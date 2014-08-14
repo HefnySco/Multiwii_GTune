@@ -13,7 +13,7 @@ static pid_ AvgPID[3];
 
 void init_ZEROPID();
 void save_ZEROPID();
-void calculate_ZEROPID (uint8_t Axis, int16_t Error);
+void calculate_ZEROPID (uint8_t Axis, int16_t Stick, int16_t Error);
 
 #endif
 

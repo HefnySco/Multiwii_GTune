@@ -1297,47 +1297,8 @@ void loop () {
 #if defined (G_TUNE)
 	if((f.GTUNE) && f.ARMED)
     {
-		calculate_ZEROPID (axis, imu.gyroData[axis]); //error);
-/*	
-	  debug[0]= rc;
-      debug[1]= abs(error) ;
-	
-	  int16_t diff_P = (int16_t)(abs(error) - abs(OldError[0][i])); 
-      int16_t diff_I = (int16_t)(abs(error) - abs(OldError[1][i])); 
-      
-	  if (diff_P > 1)
-	  {
-		if (conf.pid[axis].P8 < 100) conf.pid[axis].P8 +=1;
-	  }
-	   if (diff_P < -1)
-	  {
-		if ( conf.pid[axis].P8 > 0)	conf.pid[axis].P8 -=1;
-	  }
-	  
-	  if (diff_I > 1)
-	  {
-		if (conf.pid[axis].I8 < 100) conf.pid[axis].I8 +=1;
-	  }
-	   if (diff_I < -1)
-	  {
-		if ( conf.pid[axis].I8 > 0)	conf.pid[axis].I8 -=1;
-	  }
-	  
-
-	  //if ((abs(rc) < 50) && (rcCommand[THROTTLE] > MINTHROTTLE + 250))
-	  if ((abs(error) < 50) && (rcCommand[THROTTLE] > MINTHROTTLE + 250))
-	  {
-		AvgPID[axis].P8 = (AvgPID[axis].P8 + conf.pid[axis].P8) / 2;
-	  	AvgPID[axis].I8 = (AvgPID[axis].I8 + conf.pid[axis].I8) / 2;
-	  }
-  	   debug[2] = diff_P;
-	   debug[3] = conf.pid[1].P8;
-
-	 OldError[0][i] = ( 3 * OldError[0][i] + (int16_t)abs(error)) / 4;
-	 OldError[1][i] = ( 19 * OldError[1][i] + (int16_t)abs(error)) / 20;
-	 
-*/ 
-   } 
+		calculate_ZEROPID (axis, rc, imu.gyroData[axis]); 
+    } 
   
  
 #endif
@@ -1366,40 +1327,7 @@ void loop () {
   
  if((f.GTUNE) && f.ARMED)
   {
-	  calculate_ZEROPID (YAW,error);
-/*	  int16_t diff_P = (int16_t)(abs(error) - abs(OldError[0][YAW])); 
-      int16_t diff_I = (int16_t)(abs(error) - abs(OldError[1][YAW])); 
-      
-	  if (diff_P > 1)
-	  {
-		if (conf.pid[YAW].P8 < 100) conf.pid[YAW].P8 +=1;
-	  }
-	   if (diff_P < -1)
-	  {
-		if (conf.pid[YAW].P8 > 0)	conf.pid[YAW].P8 -=1;
-	  }
-	 
-	  
-	  if (diff_I > 1)
-	  {
-		if (conf.pid[YAW].I8 < 100) conf.pid[YAW].I8 +=1;
-	  }
-	   if (diff_I < -1)
-	  {
-		if (conf.pid[YAW].I8 > 0)	conf.pid[YAW].I8 -=1;
-	  }
-	  
-  
-	  //if ((abs(rc) < 50) && (rcCommand[THROTTLE] > MINTHROTTLE + 250))
-	  if ((abs(error) < 50) && (rcCommand[THROTTLE] > MINTHROTTLE + 250))
-	  {
-		AvgPID[YAW].P8 = (AvgPID[YAW].P8 + conf.pid[YAW].P8) / 2;
-		AvgPID[YAW].I8 = (AvgPID[YAW].I8 + conf.pid[YAW].I8) / 2;
-	  }
-	  
-	  OldError[0][YAW] = (3 * OldError[0][YAW] + (int16_t)abs(error)) / 4;
-	  OldError[1][YAW] = (19 * OldError[1][YAW] + (int16_t)abs(error)) / 20;
-  */
+	  calculate_ZEROPID (YAW,rc,error);
   }
   
   
