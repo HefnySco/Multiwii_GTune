@@ -20,7 +20,8 @@
 				a. separate skip_time be axis.
 				b. skip when rc stick is not neutral [+-Value]
 				(a & b) are some techniques used by CrashZero in his code ... http://diydrones.com/profiles/blogs/zero-pid-tunes-for-multirotors-part-2?id=705844%3ABlogPost%3A1745293&page=3#comments
-				
+//	version 1.0.4:
+				a. adding wobble detection.		
 */			
 #include "Arduino.h"
 #include "config.h"
@@ -74,6 +75,11 @@ void save_ZEROPID()
 
 int16_t time_skip[3] = {0,0,0}; // skip need to be multiples of three. as we enter here there times for 1 measure as we have three axis.
 int16_t	I_Counter[3] = {0,0,0};
+int8_t	Wobble_LastErrorSign[3] = {0,0,0};	//1 Positive, -1 Negative , 0 NA
+int16_t Wobble_Peaks[3][2] = {{0,0},{0,0},{0,0}};
+uint16_t Wobble_Counter[3]={0,0,0};
+uint16_t Wobble_WaveLength[3]={0,0,0};
+int16_t Wobble_time_skip[3] = {0,0,0};
 void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 {
 	int16_t diff_P;
@@ -84,6 +90,53 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 		time_skip[Axis] = 50; // 100 ms 
 		return ;
 	}
+	
+	// Wobble Detection
+	if (Error > 0)
+	{  // from - to +
+		
+		if (Wobble_LastErrorSign[Axis]!=1)
+		{   // complete wave length. time to measure and take action.
+			Wobble_time_skip[Axis]++;
+			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
+			Wobble_Counter[Axis]=0;
+			if ((abs( Wobble_Peaks[0][0] + Wobble_Peaks[0][1]) > 100) && (Wobble_WaveLength[Axis] > 12))
+			{
+				if (Wobble_time_skip[Axis] < 5)
+				{
+					Wobble_time_skip[Axis] +=1;
+				}				
+				else
+				{
+					if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
+					Wobble_time_skip[Axis]=0;
+				}
+			}
+			debug[2]=Wobble_WaveLength[0];
+			debug[3]= Wobble_Peaks[0][0] + Wobble_Peaks[0][1];
+			Wobble_Peaks[Axis][0]=0;
+			Wobble_Peaks[Axis][1]=0;
+		}
+		
+		Wobble_Counter[Axis]++;
+		if (Wobble_Peaks[Axis][0] < Error)
+		{
+			Wobble_Peaks[Axis][0] = Error;
+			debug[0] = Wobble_Peaks[0][0];
+		}
+		Wobble_LastErrorSign[Axis] =1;		
+	}	
+	else if (Error < 0)
+	{  // from + to -
+		Wobble_Counter[Axis]++;
+		if (Wobble_Peaks[Axis][1] > Error)
+		{
+			Wobble_Peaks[Axis][1] = Error;
+			debug[1] = Wobble_Peaks[0][1];
+		}
+		Wobble_LastErrorSign[Axis] = -1;		
+	}			
+	
 	
 	if (time_skip[Axis] > 0 )
 	{
@@ -114,7 +167,7 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 		{
 			if (conf.pid[Axis].I8 < MAX_TUNED_I)  {conf.pid[Axis].I8 +=1;}
 		}
-		else if(AvgError[Axis] <= conf.pid[PIDALT].D8) 
+		else if(abs(AvgError[Axis]) <= conf.pid[PIDALT].D8) 
 		{
 			if (conf.pid[Axis].I8 > 0)  {conf.pid[Axis].I8 -=1;}
 		}
@@ -140,18 +193,8 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 			if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
 		}
 	}
-/*
-	else if (Error > 0)  
-	{   // from - to +
-		diff_P = (int16_t)(abs((int16_t)Error) + abs(OldError[P_INDEX][Axis]));
-		// Nothing to Do Now
-	}	
-	else if (Error < 0)	
-	{  // from + to - 
-		diff_P = (int16_t)(abs((int16_t)Error) + abs(OldError[P_INDEX][Axis]));
-		// Nothing to Do Now
-	}			
-*/	
+
+	
 	
 	// This condition to save final PID result from corruption due to landing 
 	// and hitting ground. We change the PID for all throttle values to allow flying.
