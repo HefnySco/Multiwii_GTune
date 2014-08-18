@@ -22,6 +22,8 @@
 				(a & b) are some techniques used by CrashZero in his code ... http://diydrones.com/profiles/blogs/zero-pid-tunes-for-multirotors-part-2?id=705844%3ABlogPost%3A1745293&page=3#comments
 //	version 1.0.4:
 				a. adding wobble detection.		
+//	version 1.0.5:
+				a. more accurate wobble detection		
 */			
 #include "Arduino.h"
 #include "config.h"
@@ -37,10 +39,20 @@
 #define I_INDEX	1
 #define D_INDEX	2
 
+// RC sticks over which calculation is skipped as sticks will corrupt the calculations.
+#define ZERO_RC_STICKS		80			// (conf.pid[PIDALT].P8 << 2) 
+// number of cycles that are skipped between each ZERO_PID execution.
+#define TIME_SKIP	10					// conf.pid[PIDLEVEL].D8
+// value over which I is incremented.
+#define AVGERAGE_I_BOUNDARY	 15			// conf.pid[PIDALT].D8
+// Number of I that are averaged together. These values are read with in active ZERO_PID execution. i.e. I is ignored during time_skip is active
+#define I_CYCLE	100						// conf.pid[PIDALT].I8
+// values for incrementing and decrementing P
+#define High_Enough _1 		10			// conf.pid[PIDLEVEL].P8
+#define High_Enough _1		15			// conf.pid[PIDLEVEL].I8
 
 
-#define TUNED_BAND	4
-#define TUNED_DIFF	4	
+// Max P & I based on multiwii
 #define MAX_TUNED_P	200
 #define MAX_TUNED_I	100
 
@@ -76,10 +88,70 @@ void save_ZEROPID()
 int16_t time_skip[3] = {0,0,0}; // skip need to be multiples of three. as we enter here there times for 1 measure as we have three axis.
 int16_t	I_Counter[3] = {0,0,0};
 int8_t	Wobble_LastErrorSign[3] = {0,0,0};	//1 Positive, -1 Negative , 0 NA
-int16_t Wobble_Peaks[3][2] = {{0,0},{0,0},{0,0}};
+int16_t Wobble_Rotation[3][2] = {{0,0},{0,0},{0,0}};
 uint16_t Wobble_Counter[3]={0,0,0};
 uint16_t Wobble_WaveLength[3]={0,0,0};
 int16_t Wobble_time_skip[3] = {0,0,0};
+
+void calculate_Wobble (uint8_t Axis, int16_t Stick, int16_t Error)
+{
+	if (abs(Stick) > (conf.pid[PIDALT].P8 << 2))
+	{   // skip if stick is non zero
+		Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
+		return ;
+	}
+	
+	// Wobble Detection
+	if (Error >= 0)
+	{  // from - to +
+		
+		if (Wobble_LastErrorSign[Axis]!=1)
+		{   // complete wave length. time to measure and take action.
+			Wobble_time_skip[Axis] +=1;
+			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
+			
+			if (Wobble_time_skip[Axis] > 0)
+			{  // stop changing P each time... leave time to allow updated P to take effect.
+				Wobble_time_skip[Axis] -=1;
+			}				
+			else
+			{   
+				Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
+			}
+			debug[2]= Wobble_WaveLength[0];
+			debug[3]= Wobble_Rotation[0][0] - Wobble_Rotation[0][1];
+			Wobble_Rotation[Axis][0]=0;
+			Wobble_Rotation[Axis][1]=0;
+			Wobble_Counter[Axis]=0;
+		}
+		
+		Wobble_Counter[Axis]++;
+		
+		//if (Wobble_Rotation[Axis][0] < Error)
+		//{
+		//	Wobble_Rotation[Axis][0] = Error / 16;
+		//	debug[0] = Wobble_Rotation[0][0];
+		//}
+		
+		Wobble_Rotation[Axis][0] += Error;
+		Wobble_LastErrorSign[Axis] =1;	
+		debug[0] = Wobble_Rotation[0][0];		
+	}	
+	else if (Error < 0)
+	{  // from + to -
+		Wobble_Counter[Axis] +=1;
+		
+		//if (Wobble_Rotation[Axis][1] > Error)
+		//{
+		//	Wobble_Rotation[Axis][1] = Error / 16;
+		//	debug[1] = Wobble_Rotation[0][1];
+		//}
+		
+		Wobble_Rotation[Axis][1] += Error;
+		Wobble_LastErrorSign[Axis] = -1;		
+		debug[1] = Wobble_Rotation[0][1];		
+	}	
+}
 void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 {
 	int16_t diff_P;
@@ -88,53 +160,65 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 	if (abs(Stick) > (conf.pid[PIDALT].P8 << 2))
 	{   // skip if stick is non zero
 		time_skip[Axis] = 50; // 100 ms 
+		Wobble_time_skip[Axis]=50;
 		return ;
 	}
 	
 	// Wobble Detection
-	if (Error > 0)
+	if (Error >= 0)
 	{  // from - to +
 		
 		if (Wobble_LastErrorSign[Axis]!=1)
 		{   // complete wave length. time to measure and take action.
-			Wobble_time_skip[Axis]++;
+			Wobble_time_skip[Axis] +=1;
 			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
-			Wobble_Counter[Axis]=0;
-			if ((abs( Wobble_Peaks[0][0] + Wobble_Peaks[0][1]) > 100) && (Wobble_WaveLength[Axis] > 12))
-			{
-				if (Wobble_time_skip[Axis] < 5)
-				{
-					Wobble_time_skip[Axis] +=1;
-				}				
-				else
+			
+			if (Wobble_time_skip[Axis] > 0)
+			{  // stop changing P each time... leave time to allow updated P to take effect.
+				Wobble_time_skip[Axis] -=1;
+			}				
+			else
+			{   
+				Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
+				// Wobble Detection
+				//if ((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) > 2) && (Wobble_WaveLength[Axis] > 12))
+				if ((Wobble_WaveLength[Axis] > conf.pid[PIDNAVR].I8))
 				{
 					if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
-					Wobble_time_skip[Axis]=0;
 				}
 			}
-			debug[2]=Wobble_WaveLength[0];
-			debug[3]= Wobble_Peaks[0][0] + Wobble_Peaks[0][1];
-			Wobble_Peaks[Axis][0]=0;
-			Wobble_Peaks[Axis][1]=0;
+			debug[2]= Wobble_WaveLength[0];
+			debug[3]= Wobble_Rotation[0][0] - Wobble_Rotation[0][1];
+			Wobble_Rotation[Axis][0]=0;
+			Wobble_Rotation[Axis][1]=0;
+			Wobble_Counter[Axis]=0;
 		}
 		
 		Wobble_Counter[Axis]++;
-		if (Wobble_Peaks[Axis][0] < Error)
+		
+		if (Wobble_Rotation[Axis][0] < Error)
 		{
-			Wobble_Peaks[Axis][0] = Error;
-			debug[0] = Wobble_Peaks[0][0];
+			Wobble_Rotation[Axis][0] = Error / 16;
+			debug[0] = Wobble_Rotation[0][0];
 		}
-		Wobble_LastErrorSign[Axis] =1;		
+		
+		//Wobble_Rotation[Axis][0] += Error;
+		Wobble_LastErrorSign[Axis] =1;	
+		//debug[0] = Wobble_Rotation[0][0];		
 	}	
 	else if (Error < 0)
 	{  // from + to -
-		Wobble_Counter[Axis]++;
-		if (Wobble_Peaks[Axis][1] > Error)
+		Wobble_Counter[Axis] +=1;
+		
+		if (Wobble_Rotation[Axis][1] > Error)
 		{
-			Wobble_Peaks[Axis][1] = Error;
-			debug[1] = Wobble_Peaks[0][1];
+			Wobble_Rotation[Axis][1] = Error / 16;
+			debug[1] = Wobble_Rotation[0][1];
 		}
+		
+		//Wobble_Rotation[Axis][1] += Error;
 		Wobble_LastErrorSign[Axis] = -1;		
+		//debug[1] = Wobble_Rotation[0][1];		
 	}			
 	
 	

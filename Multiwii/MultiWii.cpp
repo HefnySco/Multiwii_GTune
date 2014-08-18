@@ -1295,6 +1295,10 @@ void loop () {
     axisPID[axis] =  PTerm + ITerm - DTerm;
 	
 #if defined (G_TUNE)
+	if(!(f.GTUNE) && f.ARMED)
+	{
+		calculate_Wobble (axis, rc, imu.gyroData[axis]); 
+	}
 	if((f.GTUNE) && f.ARMED)
     {
 		calculate_ZEROPID (axis, rc, imu.gyroData[axis]); 
