@@ -462,14 +462,15 @@ void annexCode() { // this code is excetuted at each loop and won't interfere wi
     alarmHandler(); // external buzzer routine that handles buzzer events globally now
   #endif
 
-
+	// MHefny: Temp
+  /* MHefny: Temp
   if ( (calibratingA>0 && ACC ) || (calibratingG>0) ) { // Calibration phasis
     LEDPIN_TOGGLE;
   } else {
     if (f.ACC_CALIBRATED) {LEDPIN_OFF;}
     if (f.ARMED) {LEDPIN_ON;}
   }
-
+*/
   #if defined(LED_RING)
     static uint32_t LEDTime;
     if ( currentTime > LEDTime ) {
@@ -486,7 +487,7 @@ void annexCode() { // this code is excetuted at each loop and won't interfere wi
     if (! f.SMALL_ANGLES_25) {
       // the multi uses ACC and is not calibrated or is too much inclinated
       f.ACC_CALIBRATED = 0;
-      LEDPIN_TOGGLE;
+      // MHefny: Temp LEDPIN_TOGGLE;
       calibratedAccTime = currentTime + 100000;
     } else {
       f.ACC_CALIBRATED = 1;
@@ -645,9 +646,9 @@ void setup() {
     GPS_SerialInit();
     for(uint8_t j=0;j<=5;j++){
       GPS_NewData(); 
-      LEDPIN_ON
+      // MHefny: Temp LEDPIN_ON
       delay(20);
-      LEDPIN_OFF
+      // MHefny: Temp LEDPIN_OFF
       delay(80);
     }
     #if defined(GPS_PROMINI)
@@ -1295,7 +1296,7 @@ void loop () {
     axisPID[axis] =  PTerm + ITerm - DTerm;
 	
 #if defined (G_TUNE)
-	if(!(f.GTUNE) && f.ARMED)
+	if(!(f.GTUNE) )
 	{
 		calculate_Wobble (axis, rc, imu.gyroData[axis]); 
 	}

@@ -40,7 +40,7 @@
 #define D_INDEX	2
 
 // RC sticks over which calculation is skipped as sticks will corrupt the calculations.
-#define ZERO_RC_STICKS		80			// (conf.pid[PIDALT].P8 << 2) 
+#define ZERO_RC_STICKS		12			// (conf.pid[PIDALT].P8 ) 
 // number of cycles that are skipped between each ZERO_PID execution.
 #define TIME_SKIP	10					// conf.pid[PIDLEVEL].D8
 // value over which I is incremented.
@@ -56,6 +56,14 @@
 #define MAX_TUNED_P	200
 #define MAX_TUNED_I	100
 
+int16_t time_skip[3] = {0,0,0}; // skip need to be multiples of three. as we enter here there times for 1 measure as we have three axis.
+int16_t	I_Counter[3] = {0,0,0};
+int8_t	Wobble_LastErrorSign[3] = {0,0,0};	//1 Positive, -1 Negative , 0 NA
+int16_t Wobble_Rotation[3][2] = {{0,0},{0,0},{0,0}};
+uint16_t Wobble_Counter[3]={0,0,0};
+uint16_t Wobble_WaveLength[3]={0,0,0};
+int16_t Wobble_time_skip[3] = {0,0,0};
+bool I_Am_Called = false;
 
 void init_ZEROPID()
 {
@@ -64,9 +72,10 @@ void init_ZEROPID()
 		OrgPID[i].P8 = conf.pid[i].P8;
 		OrgPID[i].I8 = conf.pid[i].I8;
 		OrgPID[i].D8 = conf.pid[i].D8;
-		conf.pid[i].P8 =0;
-		conf.pid[i].I8 =0;
-		conf.pid[i].D8 =0;
+		// init using current PIDs
+		//conf.pid[i].P8 =200;
+		//conf.pid[i].I8 =0;
+		//conf.pid[i].D8 =0;
 		AvgPID[i].P8=0;
 		AvgPID[i].I8=0;
 		AvgPID[i].D8=0;
@@ -77,102 +86,38 @@ void init_ZEROPID()
 
 void save_ZEROPID()
 {
+	if (I_Am_Called != true) return ;
+	
 	for (int i=0;i < 3;++i)
 	{
-		conf.pid[i].P8 = AvgPID[i].P8;
-		conf.pid[i].I8 = AvgPID[i].I8;
-		conf.pid[i].D8 = AvgPID[i].D8;
+			conf.pid[i].P8 = AvgPID[i].P8;
+			conf.pid[i].I8 = AvgPID[i].I8;
+			conf.pid[i].D8 = AvgPID[i].D8;
 	}
 }
 
-int16_t time_skip[3] = {0,0,0}; // skip need to be multiples of three. as we enter here there times for 1 measure as we have three axis.
-int16_t	I_Counter[3] = {0,0,0};
-int8_t	Wobble_LastErrorSign[3] = {0,0,0};	//1 Positive, -1 Negative , 0 NA
-int16_t Wobble_Rotation[3][2] = {{0,0},{0,0},{0,0}};
-uint16_t Wobble_Counter[3]={0,0,0};
-uint16_t Wobble_WaveLength[3]={0,0,0};
-int16_t Wobble_time_skip[3] = {0,0,0};
 
 void calculate_Wobble (uint8_t Axis, int16_t Stick, int16_t Error)
 {
-	if (abs(Stick) > (conf.pid[PIDALT].P8 << 2))
+	int16_t  Errordiv16;
+	
+	// Skip if stick is not neutral.
+	if (abs(Stick) > (conf.pid[PIDALT].P8 ))
 	{   // skip if stick is non zero
+		
 		Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
 		return ;
 	}
 	
+	Errordiv16 = Error / 4;
 	// Wobble Detection
-	if (Error >= 0)
+	if (Errordiv16 > 0)
 	{  // from - to +
 		
 		if (Wobble_LastErrorSign[Axis]!=1)
 		{   // complete wave length. time to measure and take action.
-			Wobble_time_skip[Axis] +=1;
 			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
-			
-			if (Wobble_time_skip[Axis] > 0)
-			{  // stop changing P each time... leave time to allow updated P to take effect.
-				Wobble_time_skip[Axis] -=1;
-			}				
-			else
-			{   
-				Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
-			}
-			debug[2]= Wobble_WaveLength[0];
-			debug[3]= Wobble_Rotation[0][0] - Wobble_Rotation[0][1];
-			Wobble_Rotation[Axis][0]=0;
-			Wobble_Rotation[Axis][1]=0;
-			Wobble_Counter[Axis]=0;
-		}
 		
-		Wobble_Counter[Axis]++;
-		
-		//if (Wobble_Rotation[Axis][0] < Error)
-		//{
-		//	Wobble_Rotation[Axis][0] = Error / 16;
-		//	debug[0] = Wobble_Rotation[0][0];
-		//}
-		
-		Wobble_Rotation[Axis][0] += Error;
-		Wobble_LastErrorSign[Axis] =1;	
-		debug[0] = Wobble_Rotation[0][0];		
-	}	
-	else if (Error < 0)
-	{  // from + to -
-		Wobble_Counter[Axis] +=1;
-		
-		//if (Wobble_Rotation[Axis][1] > Error)
-		//{
-		//	Wobble_Rotation[Axis][1] = Error / 16;
-		//	debug[1] = Wobble_Rotation[0][1];
-		//}
-		
-		Wobble_Rotation[Axis][1] += Error;
-		Wobble_LastErrorSign[Axis] = -1;		
-		debug[1] = Wobble_Rotation[0][1];		
-	}	
-}
-void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
-{
-	int16_t diff_P;
-	int16_t diff_I;
-	
-	if (abs(Stick) > (conf.pid[PIDALT].P8 << 2))
-	{   // skip if stick is non zero
-		time_skip[Axis] = 50; // 100 ms 
-		Wobble_time_skip[Axis]=50;
-		return ;
-	}
-	
-	// Wobble Detection
-	if (Error >= 0)
-	{  // from - to +
-		
-		if (Wobble_LastErrorSign[Axis]!=1)
-		{   // complete wave length. time to measure and take action.
-			Wobble_time_skip[Axis] +=1;
-			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
-			
 			if (Wobble_time_skip[Axis] > 0)
 			{  // stop changing P each time... leave time to allow updated P to take effect.
 				Wobble_time_skip[Axis] -=1;
@@ -181,44 +126,132 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 			{   
 				Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
 				// Wobble Detection
-				//if ((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) > 2) && (Wobble_WaveLength[Axis] > 12))
-				if ((Wobble_WaveLength[Axis] > conf.pid[PIDNAVR].I8))
+				//if (((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) * Wobble_WaveLength[Axis]) > conf.pid[PIDNAVR].I8 << 2))
+				if (((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) >  conf.pid[PIDNAVR].D8) && (Wobble_WaveLength[Axis]) >  conf.pid[PIDNAVR].I8))
 				{
-					if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
+					if (Axis==0) LEDPIN_OFF;
+					//if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
 				}
+				else
+				{
+					if (Axis==0) LEDPIN_ON;
+				}
+		
 			}
-			debug[2]= Wobble_WaveLength[0];
-			debug[3]= Wobble_Rotation[0][0] - Wobble_Rotation[0][1];
+			if (Axis ==0)
+			{
+				debug[1]= Wobble_WaveLength[Axis];
+				debug[2]= Wobble_Rotation[Axis][0] - Wobble_Rotation[Axis][1];
+				debug[3]= abs( Wobble_Rotation[Axis][0] - Wobble_Rotation[Axis][1]) * Wobble_WaveLength[Axis];
+			}
+			
 			Wobble_Rotation[Axis][0]=0;
 			Wobble_Rotation[Axis][1]=0;
 			Wobble_Counter[Axis]=0;
 		}
 		
-		Wobble_Counter[Axis]++;
+		Wobble_Counter[Axis] +=1;
 		
-		if (Wobble_Rotation[Axis][0] < Error)
+		if (Wobble_Rotation[Axis][0] < Errordiv16)
 		{
-			Wobble_Rotation[Axis][0] = Error / 16;
-			debug[0] = Wobble_Rotation[0][0];
+			Wobble_Rotation[Axis][0] = Errordiv16;
+			if (Axis ==0)  debug[0] = Wobble_Rotation[0][0];
 		}
 		
 		//Wobble_Rotation[Axis][0] += Error;
 		Wobble_LastErrorSign[Axis] =1;	
-		//debug[0] = Wobble_Rotation[0][0];		
+		//debug[0] = Wobble_Rotation[0][0];	
 	}	
-	else if (Error < 0)
+	else if (Errordiv16 < 0)
 	{  // from + to -
 		Wobble_Counter[Axis] +=1;
-		
-		if (Wobble_Rotation[Axis][1] > Error)
+		if (Wobble_Rotation[Axis][1] > Errordiv16)
 		{
-			Wobble_Rotation[Axis][1] = Error / 16;
-			debug[1] = Wobble_Rotation[0][1];
+			Wobble_Rotation[Axis][1] = Errordiv16;
 		}
 		
 		//Wobble_Rotation[Axis][1] += Error;
 		Wobble_LastErrorSign[Axis] = -1;		
-		//debug[1] = Wobble_Rotation[0][1];		
+		//debug[1] = Wobble_Rotation[0][1];			
+	}	
+}
+void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
+{
+	int16_t diff_P;
+	int16_t diff_I;
+	int16_t  Errordiv16;
+	I_Am_Called = true;
+	
+	// Skip if stick is not neutral.
+	if (abs(Stick) > (conf.pid[PIDALT].P8 ))
+	{   // skip if stick is non zero
+		time_skip[Axis] = 50; // 100 ms 
+		Wobble_time_skip[Axis]=50;
+		return ;
+	}
+	
+	Errordiv16 = Error / 4;
+	// Wobble Detection
+	if (Errordiv16 > 0)
+	{  // from - to +
+		if (Wobble_LastErrorSign[Axis]!=1)
+		{   
+			// complete wave length.
+			Wobble_WaveLength[Axis]=Wobble_Counter[Axis];
+					   	
+			if (Wobble_time_skip[Axis] > 0)
+			{  // stop changing P each time... leave time to allow updated P to take effect.
+				Wobble_time_skip[Axis] -=1;
+			}				
+			else
+			{   
+				Wobble_time_skip[Axis]=conf.pid[PIDLEVEL].D8;
+				// Wobble Detection
+				//if ( > 2) && (Wobble_WaveLength[Axis] > 12))
+				//if (((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) * Wobble_WaveLength[Axis]) > conf.pid[PIDNAVR].I8 << 2))
+				if (((abs( Wobble_Rotation[0][0] - Wobble_Rotation[0][1]) >  conf.pid[PIDNAVR].D8) && (Wobble_WaveLength[Axis]) >  conf.pid[PIDNAVR].I8)
+				&& (conf.pid[PIDNAVR].I8 !=0) && (conf.pid[PIDNAVR].D8 !=0))
+				{
+					if (Axis==0) LEDPIN_OFF;
+					if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
+					if ( conf.pid[Axis].I8 >= 10)	{conf.pid[Axis].I8  -=10;} else {conf.pid[Axis].I8 =0;}
+				}
+				else
+				{
+					if (Axis==0) LEDPIN_ON;
+				}
+			}
+			if (Axis ==0)
+			{
+				debug[1]= Wobble_WaveLength[Axis];
+				debug[2]= Wobble_Rotation[Axis][0] - Wobble_Rotation[Axis][1];
+				debug[3]=abs( Wobble_Rotation[Axis][0] - Wobble_Rotation[Axis][1]) * Wobble_WaveLength[Axis];
+			}
+			
+			Wobble_Rotation[Axis][0]=0;
+			Wobble_Rotation[Axis][1]=0;
+			Wobble_Counter[Axis]=0;
+		}
+		
+		Wobble_Counter[Axis] +=1;
+		
+		if (Wobble_Rotation[Axis][0] < Errordiv16)
+		{   // wobble_rotation [0] keeps the highest value
+			Wobble_Rotation[Axis][0] = Errordiv16;
+			if (Axis ==0) debug[0] = Wobble_Rotation[0][0];
+		}
+		
+		Wobble_LastErrorSign[Axis] =1;	
+	}	
+	else if (Errordiv16 < 0)
+	{  // from + to -
+		Wobble_Counter[Axis] +=1;
+		if (Wobble_Rotation[Axis][1] > Errordiv16)
+		{ // wobble_rotation [1] keeps the lowest value 
+			Wobble_Rotation[Axis][1] = Errordiv16;
+		}
+		
+		Wobble_LastErrorSign[Axis] = -1;		
 	}			
 	
 	
@@ -227,7 +260,7 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 		time_skip[Axis] -=1;
 		return ; // dont enter the loop.
 	}
-	time_skip[Axis] = conf.pid[PIDLEVEL].D8;
+	time_skip[Axis] = TIME_SKIP; //conf.pid[PIDLEVEL].D8;
 	
 	
 	// Handling I Part
@@ -247,13 +280,16 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 	}
 	else
 	{   // Update I based on averages
-		if (abs(AvgError[Axis]) > conf.pid[PIDALT].D8) 
+		if (conf.pid[PIDALT].D8 !=0)
 		{
-			if (conf.pid[Axis].I8 < MAX_TUNED_I)  {conf.pid[Axis].I8 +=1;}
-		}
-		else if(abs(AvgError[Axis]) <= conf.pid[PIDALT].D8) 
-		{
-			if (conf.pid[Axis].I8 > 0)  {conf.pid[Axis].I8 -=1;}
+			if (abs(AvgError[Axis]) > conf.pid[PIDALT].D8) 
+			{
+				if (conf.pid[Axis].I8 < MAX_TUNED_I)  {conf.pid[Axis].I8 +=1;}
+			}
+			else if(abs(AvgError[Axis]) <= conf.pid[PIDALT].D8) 
+			{
+				if (conf.pid[Axis].I8 > 0)  {conf.pid[Axis].I8 -=1;}
+			}
 		}
 		// Reset Averages
 		AvgError[Axis] =0;
@@ -268,11 +304,11 @@ void calculate_ZEROPID (uint8_t Axis,  int16_t Stick, int16_t Error)
 		diff_P = (int16_t)(abs((int16_t)Error) - abs(OldError[P_INDEX][Axis]));
 		
 		
-		if (diff_P > conf.pid[PIDLEVEL].P8) // Condition #1:
+		if ((diff_P > conf.pid[PIDLEVEL].P8) && (conf.pid[PIDLEVEL].P8 !=0)) // Condition #1:
 		{ // 2.1 speed increased -in either positive or negative-
 			if (conf.pid[Axis].P8 < MAX_TUNED_P)  {conf.pid[Axis].P8 +=1;}
 		}
-		else if (diff_P < -conf.pid[PIDLEVEL].I8) // Condition #2:		
+		else if ((diff_P < -conf.pid[PIDLEVEL].I8) && (conf.pid[PIDLEVEL].I8 !=0)) // Condition #2:		
 		{ // 2.2 we are catching up now.
 			if ( conf.pid[Axis].P8 > 0)	{conf.pid[Axis].P8  -=1;}
 		}
